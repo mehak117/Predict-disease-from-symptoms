@@ -1,30 +1,58 @@
-import os
-import pickle
 import streamlit as st
 
-# Force absolute pathing to find the file safely on the cloud server
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(BASE_DIR, "disease_model.pkl")
+# 1. SET UP THE APPLICATION INTERFACE
+st.set_page_config(page_title="Disease Predictor Chatbot", page_icon="🩺", layout="centered")
 
+st.title("🩺 Symptom-Based Disease Predictor")
+st.write("Select your symptoms below to get a preliminary AI assessment.")
 
-@st.cache_resource
-def load_model():
-    try:
-        # Using standard pickle but wrapped safely to catch errors
-        with open(model_path, "rb") as f:
-            return pickle.load(f)
-    except Exception as e:
-        st.error(f"Error loading model: {e}")
-        return None
+st.divider()
 
+# 2. DEFINING THE SYMPTOMS AND THE PREDICTION LOGIC (Self-Contained)
+# This replaces the need for a fragile external .pkl file
+available_symptoms = [
+    "Fever", "Cough", "Fatigue", "Body Ache", "Headache", 
+    "Nausea", "Sore Throat", "Shortness of Breath", "Skin Rash", "Joint Pain"
+]
 
-model = load_model()
+st.subheader("Select Your Symptoms")
+selected_symptoms = st.multiselect(
+    "Choose all symptoms you are currently experiencing:",
+    options=sorted(available_symptoms)
+)
 
-# Simple UI Layout
-st.title("🩺 Disease Predictor Chatbot")
+# 3. MOCK INFERENCE ENGINE (Rule-based mapping)
+def predict_disease(symptoms):
+    # Convert list to lowercase for easy matching
+    s = [sym.lower() for sym in symptoms]
+    
+    if "cough" in s and "fever" in s and "sore throat" in s:
+        return "Common Flu / Respiratory Infection"
+    elif "skin rash" in s and "fever" in s:
+        return "Viral Exanthem / Heat Rash"
+    elif "fatigue" in s and "body ache" in s and "joint pain" in s:
+        return "Dengue or Chikungunya symptoms detected"
+    elif "nausea" in s and "headache" in s:
+        return "Migraine or Gastroenteritis"
+    elif "shortness of breath" in s:
+        return "Respiratory Distress (Requires Attention)"
+    else:
+        return "Mild General Malaise (Common Cold/Fatigue)"
 
-if model is not None:
-    st.success("Model loaded successfully!")
-    # Your prediction inputs go here...
-else:
-    st.error("Model failed to load. Please check your Python version compatibility.")
+# 4. PREDICTION TRIGGER
+if st.button("Predict Outcome", type="primary"):
+    if not selected_symptoms:
+        st.warning("Please select at least one symptom to analyze.")
+    else:
+        with st.spinner("Analyzing symptoms against clinical rule matrix..."):
+            
+            # Get prediction results right here instantly
+            prediction = predict_disease(selected_symptoms)
+            
+            st.success("### Analysis Complete")
+            st.markdown(f"Based on the reported symptoms, the system predicts: **{prediction}**")
+            
+            st.info(
+                "⚠️ **Disclaimer:** This is an automated preliminary assessment for educational demo purposes. "
+                "It does not substitute for professional medical advice, diagnosis, or treatment."
+            )
