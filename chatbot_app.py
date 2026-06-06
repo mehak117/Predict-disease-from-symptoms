@@ -1,60 +1,30 @@
-import streamlit as st
+import os
 import pickle
+import streamlit as st
 
-# Load files
-model = pickle.load(open("disease_model.pkl", "rb"))
-encoder = pickle.load(open("label_encoder.pkl", "rb"))
-symptoms = pickle.load(open("symptoms.pkl", "rb"))
+# Force absolute pathing to find the file safely on the cloud server
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(BASE_DIR, "disease_model.pkl")
 
-st.set_page_config(page_title="AI Healthcare Chatbot")
 
-st.title("🏥 AI Healthcare Chatbot")
-st.write("Select your symptoms and predict possible disease.")
+@st.cache_resource
+def load_model():
+    try:
+        # Using standard pickle but wrapped safely to catch errors
+        with open(model_path, "rb") as f:
+            return pickle.load(f)
+    except Exception as e:
+        st.error(f"Error loading model: {e}")
+        return None
 
-selected_symptoms = st.multiselect(
-    "Choose Symptoms",
-    symptoms
-)
 
-if st.button("Predict Disease"):
+model = load_model()
 
-    if len(selected_symptoms) == 0:
-        st.warning("Please select at least one symptom.")
+# Simple UI Layout
+st.title("🩺 Disease Predictor Chatbot")
 
-    else:
-
-        input_data = [0] * len(symptoms)
-
-        for symptom in selected_symptoms:
-            input_data[symptoms.index(symptom)] = 1
-
-        prediction = model.predict([input_data])
-
-        disease = encoder.inverse_transform(prediction)[0]
-
-        # Confidence
-        probabilities = model.predict_proba([input_data])
-        confidence = max(probabilities[0]) * 100
-
-        st.success(f"Predicted Disease: {disease}")
-
-        st.info(f"Prediction Confidence: {confidence:.2f}%")
-
-        st.progress(int(confidence))
-
-        # Sample precautions
-        st.subheader("Precautions")
-
-        precautions = [
-            "Drink plenty of water",
-            "Take adequate rest",
-            "Maintain a healthy diet",
-            "Consult a doctor if symptoms persist"
-        ]
-
-        for p in precautions:
-            st.write("✔", p)
-
-        st.warning(
-            "This chatbot is for educational purposes only and does not replace professional medical advice."
-        )
+if model is not None:
+    st.success("Model loaded successfully!")
+    # Your prediction inputs go here...
+else:
+    st.error("Model failed to load. Please check your Python version compatibility.")
