@@ -1,0 +1,1 @@
+model = pickle.load(open("models/disease_model.pkl", "rb"))
