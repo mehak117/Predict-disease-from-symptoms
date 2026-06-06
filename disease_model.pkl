@@ -1,1 +1,13 @@
-model = pickle.load(open("models/disease_model.pkl", "rb"))
+import pickle
+
+# --- Your machine learning code (Data loading, training, etc.) ---
+# Example:
+# model = RandomForestClassifier()
+# model.fit(X_train, y_train)
+
+# --- THE CODE THAT GENERATES THE PKL FILE ---
+# This saves your trained 'model' variable into the actual file
+with open("disease_model.pkl", "wb") as f:
+    pickle.dump(model, f)
+
+print("disease_model.pkl has been created successfully!")
