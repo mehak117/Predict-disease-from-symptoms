@@ -3,9 +3,15 @@ import pickle
 
 # Load model files
 # Load model files
-model = pickle.open("disease_model.pkl", "rb")
-encoder = pickle.load(open("label_encoder.pkl", "rb"))
-symptoms = pickle.load(open("symptoms.pkl", "rb"))
+# NEW CORRECTED CODE
+with open("disease_model.pkl", "rb") as f:
+    model = pickle.load(f)
+
+with open("label_encoder.pkl", "rb") as f:
+    encoder = pickle.load(f)
+
+with open("symptoms.pkl", "rb") as f:
+    symptoms = pickle.load(f)
 
 # Disease-specific precautions
 disease_precautions = {
