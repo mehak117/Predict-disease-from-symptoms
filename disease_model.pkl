@@ -7,7 +7,7 @@ import pickle
 
 # --- THE CODE THAT GENERATES THE PKL FILE ---
 # This saves your trained 'model' variable into the actual file
-with open("disease_model.pkl", "wb") as f:
+with load("disease_model.pkl", "wb") as f:
     pickle.dump(model, f)
 
 print("disease_model.pkl has been created successfully!")
