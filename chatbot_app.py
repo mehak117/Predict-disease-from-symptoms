@@ -2,7 +2,7 @@ import streamlit as st
 import pickle
 
 # Load model files
-model = pickle.open(open("disease_model.pkl", "rb"))
+model = pickle.open("disease_model.pkl", "rb")
 encoder = pickle.load(open("label_encoder.pkl", "rb"))
 symptoms = pickle.load(open("symptoms.pkl", "rb"))
 
