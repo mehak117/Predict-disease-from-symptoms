@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import pickle
 import sqlite3
@@ -235,4 +234,3 @@ if st.button("Show Patient History"):
             st.write("Disease:", row[5])
             st.write(f"Confidence: {row[6]:.2f}%")
             st.write("Date:", row[7])
-```
