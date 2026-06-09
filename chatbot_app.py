@@ -4,25 +4,27 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 
+# =========================
+# PAGE CONFIG
+# =========================
 st.set_page_config(
     page_title="AI Healthcare Chatbot",
     page_icon="🏥",
     layout="wide"
 )
 
-# ---------------- DATABASE ----------------
+# =========================
+# LOAD MODEL FILES
+# =========================
+model = pickle.load(open("disease_model.pkl", "rb"))
+encoder = pickle.load(open("label_encoder.pkl", "rb"))
+symptoms = pickle.load(open("symptoms.pkl", "rb"))
+
+# =========================
+# DATABASE
+# =========================
 conn = sqlite3.connect("healthcare.db", check_same_thread=False)
 cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT
-)
-""")
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS patient_records(
@@ -33,19 +35,37 @@ CREATE TABLE IF NOT EXISTS patient_records(
     symptoms TEXT,
     disease TEXT,
     confidence REAL,
-    prediction_date TEXT,
-    created_by TEXT
+    prediction_date TEXT
 )
 """)
 
 cursor.execute("""
-INSERT OR IGNORE INTO users(name, username, password, role)
-VALUES('Admin', 'admin', 'admin123', 'admin')
+CREATE TABLE IF NOT EXISTS users(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT,
+    role TEXT
+)
 """)
 
 conn.commit()
 
-# ---------------- SESSION ----------------
+# =========================
+# DEFAULT ADMIN
+# =========================
+cursor.execute("SELECT * FROM users WHERE username='admin'")
+admin_exists = cursor.fetchone()
+
+if not admin_exists:
+    cursor.execute(
+        "INSERT INTO users(username, password, role) VALUES (?, ?, ?)",
+        ("admin", "admin123", "admin")
+    )
+    conn.commit()
+
+# =========================
+# SESSION STATE
+# =========================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -55,236 +75,258 @@ if "username" not in st.session_state:
 if "role" not in st.session_state:
     st.session_state.role = ""
 
-# ---------------- LOGIN / REGISTER ----------------
+# =========================
+# LOGIN / REGISTER PAGE
+# =========================
 if not st.session_state.logged_in:
 
-    st.title("🏥 AI Healthcare Chatbot")
-    st.subheader("Login / Register")
+    st.title("🏥 AI Healthcare Chatbot Login")
 
     tab1, tab2 = st.tabs(["Login", "Register"])
 
     with tab1:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        role = st.selectbox("Login As", ["user", "admin"])
+        st.subheader("Login")
+
+        username = st.text_input("Username", key="login_user")
+        password = st.text_input("Password", type="password", key="login_pass")
 
         if st.button("Login"):
-            cursor.execute("""
-            SELECT * FROM users
-            WHERE username=? AND password=? AND role=?
-            """, (username, password, role))
-
+            cursor.execute(
+                "SELECT * FROM users WHERE username=? AND password=?",
+                (username, password)
+            )
             user = cursor.fetchone()
 
             if user:
                 st.session_state.logged_in = True
-                st.session_state.username = username
-                st.session_state.role = role
-                st.success("Login Successful")
+                st.session_state.username = user[1]
+                st.session_state.role = user[3]
+                st.success("Login successful")
                 st.rerun()
             else:
-                st.error("Invalid username, password or role")
+                st.error("Invalid username or password")
 
     with tab2:
-        name = st.text_input("Full Name")
+        st.subheader("User Registration")
+
         new_username = st.text_input("Create Username")
         new_password = st.text_input("Create Password", type="password")
 
         if st.button("Register"):
-            if name == "" or new_username == "" or new_password == "":
-                st.warning("Please fill all fields")
+            if new_username.strip() == "" or new_password.strip() == "":
+                st.warning("Please fill all fields.")
             else:
                 try:
-                    cursor.execute("""
-                    INSERT INTO users(name, username, password, role)
-                    VALUES(?,?,?,?)
-                    """, (name, new_username, new_password, "user"))
-
+                    cursor.execute(
+                        "INSERT INTO users(username, password, role) VALUES (?, ?, ?)",
+                        (new_username, new_password, "user")
+                    )
                     conn.commit()
-                    st.success("Registration successful. Now login as user.")
-                except:
-                    st.error("Username already exists")
+                    st.success("Registration successful. Please login.")
+                except sqlite3.IntegrityError:
+                    st.error("Username already exists.")
 
-    st.stop()
-
-# ---------------- LOAD MODEL ----------------
-model = pickle.load(open("disease_model.pkl", "rb"))
-encoder = pickle.load(open("label_encoder.pkl", "rb"))
-symptoms = pickle.load(open("symptoms.pkl", "rb"))
-
-# ---------------- SIDEBAR ----------------
-st.sidebar.title("🏥 Navigation")
-st.sidebar.write("Logged in as:", st.session_state.username)
-st.sidebar.write("Role:", st.session_state.role)
-
-if st.session_state.role == "admin":
-    menu = st.sidebar.radio(
-        "Select Page",
-        ["Admin Dashboard", "Disease Prediction", "Patient History", "Users"]
-    )
+# =========================
+# MAIN APP
+# =========================
 else:
-    menu = st.sidebar.radio(
-        "Select Page",
-        ["Disease Prediction", "My History"]
-    )
 
-if st.sidebar.button("Logout"):
-    st.session_state.logged_in = False
-    st.session_state.username = ""
-    st.session_state.role = ""
-    st.rerun()
+    st.sidebar.title("🏥 Navigation")
+    st.sidebar.write(f"👤 Logged in as: **{st.session_state.username}**")
+    st.sidebar.write(f"🔐 Role: **{st.session_state.role}**")
 
-# ---------------- ADMIN DASHBOARD ----------------
-if menu == "Admin Dashboard":
+    if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.username = ""
+        st.session_state.role = ""
+        st.rerun()
 
-    st.title("📊 Admin Dashboard")
-
-    df = pd.read_sql_query(
-        "SELECT * FROM patient_records",
-        conn
-    )
-
-    total_patients = len(df)
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Total Records", total_patients)
-
-    if not df.empty:
-        col2.metric("Male Patients", len(df[df["gender"] == "Male"]))
-        col3.metric("Female Patients", len(df[df["gender"] == "Female"]))
-
-        st.subheader("Disease Distribution")
-        st.bar_chart(df["disease"].value_counts())
-
-        st.subheader("Recent Patient Records")
-        st.dataframe(df.tail(10))
+    if st.session_state.role == "admin":
+        menu = st.sidebar.radio(
+            "Select Page",
+            ["Dashboard", "Disease Prediction", "Patient History", "User Management"]
+        )
     else:
-        st.info("No records found")
-
-# ---------------- DISEASE PREDICTION ----------------
-elif menu == "Disease Prediction":
-
-    st.title("🏥 Disease Prediction")
-
-    name = st.text_input("Patient Name")
-
-    age = st.number_input(
-        "Age",
-        min_value=1,
-        max_value=120,
-        value=20
-    )
-
-    gender = st.selectbox(
-        "Gender",
-        ["Male", "Female", "Other"]
-    )
-
-    selected_symptoms = st.multiselect(
-        "Select Symptoms",
-        symptoms
-    )
-
-    if st.button("Predict Disease"):
-
-        if name.strip() == "":
-            st.warning("Enter patient name")
-
-        elif len(selected_symptoms) == 0:
-            st.warning("Select at least one symptom")
-
-        else:
-            input_data = [0] * len(symptoms)
-
-            for symptom in selected_symptoms:
-                index = symptoms.index(symptom)
-                input_data[index] = 1
-
-            prediction = model.predict([input_data])
-
-            disease = encoder.inverse_transform(prediction)[0]
-
-            confidence = max(
-                model.predict_proba([input_data])[0]
-            ) * 100
-
-            cursor.execute("""
-            INSERT INTO patient_records
-            (name, age, gender, symptoms, disease,
-            confidence, prediction_date, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                name,
-                age,
-                gender,
-                ", ".join(selected_symptoms),
-                disease,
-                confidence,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                st.session_state.username
-            ))
-
-            conn.commit()
-
-            st.success(f"Predicted Disease: {disease}")
-            st.info(f"Confidence: {confidence:.2f}%")
-            st.progress(int(confidence))
-
-            st.subheader("Precautions")
-            st.write("✔ Take adequate rest")
-            st.write("✔ Stay hydrated")
-            st.write("✔ Eat healthy food")
-            st.write("✔ Consult a doctor if symptoms persist")
-
-# ---------------- ADMIN PATIENT HISTORY ----------------
-elif menu == "Patient History":
-
-    st.title("📋 All Patient History")
-
-    records = pd.read_sql_query(
-        "SELECT * FROM patient_records ORDER BY id DESC",
-        conn
-    )
-
-    if records.empty:
-        st.info("No patient history found")
-    else:
-        st.dataframe(records)
-
-        csv = records.to_csv(index=False).encode("utf-8")
-
-        st.download_button(
-            "Download All Records",
-            csv,
-            "patient_records.csv",
-            "text/csv"
+        menu = st.sidebar.radio(
+            "Select Page",
+            ["Dashboard", "Disease Prediction", "Patient History"]
         )
 
-# ---------------- USER HISTORY ----------------
-elif menu == "My History":
+    # =========================
+    # DASHBOARD
+    # =========================
+    if menu == "Dashboard":
 
-    st.title("📋 My Prediction History")
+        st.title("📊 Healthcare Dashboard")
 
-    records = pd.read_sql_query(
-        "SELECT * FROM patient_records WHERE created_by=? ORDER BY id DESC",
-        conn,
-        params=(st.session_state.username,)
-    )
+        df = pd.read_sql_query("SELECT * FROM patient_records", conn)
 
-    if records.empty:
-        st.info("No history found")
-    else:
-        st.dataframe(records)
+        total_patients = len(df)
+        male_patients = 0
+        female_patients = 0
 
-# ---------------- USERS PAGE ----------------
-elif menu == "Users":
+        if not df.empty:
+            male_patients = len(df[df["gender"] == "Male"])
+            female_patients = len(df[df["gender"] == "Female"])
 
-    st.title("👥 Registered Users")
+        col1, col2, col3 = st.columns(3)
 
-    users = pd.read_sql_query(
-        "SELECT id, name, username, role FROM users",
-        conn
-    )
+        col1.metric("Total Patients", total_patients)
+        col2.metric("Male Patients", male_patients)
+        col3.metric("Female Patients", female_patients)
 
-    st.dataframe(users)
+        if not df.empty:
+            st.subheader("Disease Distribution")
+            disease_count = df["disease"].value_counts()
+            st.bar_chart(disease_count)
+
+            st.subheader("Recent Records")
+            st.dataframe(df.tail(10))
+        else:
+            st.info("No patient records found.")
+
+    # =========================
+    # DISEASE PREDICTION
+    # =========================
+    elif menu == "Disease Prediction":
+
+        st.title("👨‍⚕️ Patient Symptom Evaluation")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            name = st.text_input("Patient Name")
+
+        with col2:
+            age = st.number_input(
+                "Age",
+                min_value=1,
+                max_value=120,
+                value=20
+            )
+
+        with col3:
+            gender = st.selectbox(
+                "Gender",
+                ["Male", "Female", "Other"]
+            )
+
+        st.write("Search and select your symptoms:")
+
+        selected_symptoms = st.multiselect(
+            "",
+            symptoms,
+            placeholder="Choose options"
+        )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if st.button("Analyze System Mapping"):
+
+            if name.strip() == "":
+                st.warning("Enter patient name.")
+
+            elif len(selected_symptoms) == 0:
+                st.warning("Select symptoms.")
+
+            else:
+                input_data = [0] * len(symptoms)
+
+                for symptom in selected_symptoms:
+                    index = symptoms.index(symptom)
+                    input_data[index] = 1
+
+                prediction = model.predict([input_data])
+
+                disease = encoder.inverse_transform(prediction)[0]
+
+                confidence = max(model.predict_proba([input_data])[0]) * 100
+
+                cursor.execute("""
+                INSERT INTO patient_records
+                (name, age, gender, symptoms, disease, confidence, prediction_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    name,
+                    age,
+                    gender,
+                    ", ".join(selected_symptoms),
+                    disease,
+                    confidence,
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ))
+
+                conn.commit()
+
+                st.success("Analysis Completed Successfully")
+
+                st.subheader("Patient Details")
+
+                r1, r2, r3 = st.columns(3)
+
+                r1.info(f"👤 Name: {name}")
+                r2.info(f"🎂 Age: {age}")
+                r3.info(f"⚧ Gender: {gender}")
+
+                st.subheader("Prediction Result")
+
+                st.success(f"🩺 Predicted Disease: {disease}")
+                st.info(f"📈 Confidence: {confidence:.2f}%")
+
+                st.progress(int(confidence))
+
+                st.subheader("Precautions")
+
+                precautions = [
+                    "Take adequate rest",
+                    "Stay hydrated",
+                    "Eat healthy food",
+                    "Consult a doctor if symptoms persist"
+                ]
+
+                for p in precautions:
+                    st.write("✔", p)
+
+    # =========================
+    # PATIENT HISTORY
+    # =========================
+    elif menu == "Patient History":
+
+        st.title("📋 Patient History")
+
+        records = pd.read_sql_query(
+            "SELECT * FROM patient_records ORDER BY id DESC",
+            conn
+        )
+
+        if records.empty:
+            st.info("No patient history found.")
+        else:
+            st.dataframe(records)
+
+            csv = records.to_csv(index=False).encode("utf-8")
+
+            st.download_button(
+                "Download Records",
+                csv,
+                "patient_records.csv",
+                "text/csv"
+            )
+
+    # =========================
+    # USER MANAGEMENT ADMIN ONLY
+    # =========================
+    elif menu == "User Management":
+
+        if st.session_state.role != "admin":
+            st.error("Access denied. Admin only.")
+        else:
+            st.title("👨‍💼 User Management")
+
+            users_df = pd.read_sql_query(
+                "SELECT id, username, role FROM users",
+                conn
+            )
+
+            st.dataframe(users_df)
